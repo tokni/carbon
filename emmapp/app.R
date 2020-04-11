@@ -27,6 +27,9 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
 #year <- 2017
 
 #read in data sources - NOTE: convert this to direct web sources if possible
+globe <- read_csv('in/map.csv') %>% 
+    rename(Country=`Country names`)
+
 clean_n_gather <- function(path) {
     read_csv(path)[,-1] %>% 
     mutate_all(as.numeric) %>% 
@@ -60,6 +63,9 @@ ui <- fluidPage(
             background-color: grey;
             color:black
         }
+      .shiny-output-error-validation {
+        color: red;
+      }
         
         <!–– #g1{overflow-y:scroll;} ––>
         
@@ -74,17 +80,22 @@ ui <- fluidPage(
     sidebarLayout(
         sidebarPanel(
             selectInput("year","Select Reference Year",choices=c(1960:2018),selected=2017),
-            selectInput("cntry","Select Country(ies)",choices=c(unique(pop$Country)),selected='China',multiple=T),
-            column(12,h5("*Select Weights (Must add to 1)")),
-            fluidRow(column(3,numericInput("w_pop","Pop.",value=.5,min=0,max=1)),
-                     column(3,numericInput("w_gdp","GDP",value=0,min=0,max=1)),
-                     column(3,numericInput("w_emm","CO2.",value=.5,min=0,max=1)),
-                     column(3,numericInput("w_emm_h","CO2 (hist).",value=0,min=0,max=1))
+            column(12,h5("*Select Geographic Location")),
+            fluidRow(
+                column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
+                column(4,selectInput("region","Region",choices=c('All',unique(globe$Region)),selected='All',multiple=T)),
+                column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
+            ),
+            column(12,h5("*Select Weights (Must add to 100%)")),
+            fluidRow(column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100)),
+                     column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100)),
+                     column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100)),
+                     column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100))
                      )
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(h3("Graph 1:"),
+        mainPanel(h3("Graph 1:"), textOutput("test"),
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
            column(12,plotlyOutput("g1") %>% withSpinner(color="#1A4C64"))
         )
@@ -92,27 +103,53 @@ ui <- fluidPage(
 )
 
 # Define server logic required to draw a histogram
-server <- function(input, output) {
-
-    output$g1 <- renderPlotly({
+server <- function(input, output, session) {
+    
+    output$test <- renderText({
+    })
+    
+    #waterfall logic for geo selections
+    observeEvent(input$cntnt,{
+      req(input$cntnt,!input$cntnt %in% c("World","All"))  
         
+      choices <- globe %>% 
+          filter(Continent==input$cntnt) %>% 
+          distinct(Region) %>% 
+          .[[1]]
+      updateSelectInput(session,"region",choices=c('All',choices),selected='All')
+    
+      choices <- globe %>% 
+          filter(Continent==input$cntnt) %>% 
+          distinct(Country) %>% 
+          .[[1]]
+      updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
+    })
+    
+    observeEvent(input$region,{
+      req(input$region,input$region!="All")  
+      choices <- globe %>% 
+          filter(Region %in% input$region) %>% 
+          distinct(Country) %>% 
+          .[[1]]
+      updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
+    })
+    
+    data <- reactive({
         wgts <- c(input$w_pop,
                   input$w_gdp,
                   input$w_emm,
-                  input$w_emm_h)
-        
+                  input$w_emm_h)/100
         validate(
-            need(sum(wgts)== 1, "Please make sure all weights add up to 1")
+            need(sum(wgts)== 1, "Please make sure all weights add up to 100%"),
+            need(length(input$cntnt)>0, "Please select at least one continent to analyze"),
+            need(length(input$region)>0, "Please select at least one region to analyze"),
+            need(length(input$cntry)>0, "Please select at least one country to analyze")
         )
         
         pop_w <- summarize_dat(pop,input$year)
         gdp_w <- summarize_dat(gdp,input$year)
         emm_w <- summarize_dat(emm,min(input$year,2014)) #emmission data stops at 2014
         #set up factor data
-        
-        validate(
-            need(length(input$cntry)>0, "Please select at least one country to analyze")
-        )
         
         carbon <- pop_w %>%
             rename(pop=w) %>% 
@@ -123,27 +160,62 @@ server <- function(input, output) {
             select(Country,w_factor) %>% 
             crossing(ipcc_2018) %>%  #full join ipcc data
             mutate(co2=ipcc*w_factor) %>% 
-            filter(input$cntry=='All'|Country %in% input$cntry)
+            inner_join(globe,by="Country") %>% #map to continents and regions
+            filter(input$cntnt %in% c("World",'All')|Continent == input$cntnt)  %>% 
+            filter(all(input$region=='All')|Region %in% input$region) %>% 
+            filter(all(input$cntry=='All')|Country %in% input$cntry)
         
-        graph1 <- ggplot(data=carbon #%>% filter(Country=='China')
+        carbon <- 
+        if(input$cntnt=="World"&all(input$region=="All")&all(input$cntry=="All")) {
+          carbon %>% 
+            mutate(Continent="World") %>% 
+            group_by(Continent,degrees,tcre_pct) %>% 
+            summarise(co2=sum(co2)) %>% 
+            mutate(total=sum(co2))
+        }
+        else if(!all(input$region=="All")&input$cntnt!="All"|!all(input$cntry=="All")) {
+          carbon %>% 
+            mutate(total=sum(co2))
+        }
+        else if(input$cntnt!="All"|!all(input$region=="All")) {
+          carbon %>%
+            group_by(Region,degrees,tcre_pct) %>% 
+            summarise(co2=sum(co2)) %>% 
+            mutate(total=sum(co2))
+        }
+        else {
+          carbon %>%
+            group_by(Continent,degrees,tcre_pct) %>% 
+            summarise(co2=sum(co2)) %>% 
+            mutate(total=sum(co2))
+        }
+            
+    })
+
+    output$g1 <- renderPlotly({
+        
+        graph1 <- ggplot(data=data() #%>% filter(Country=='China')
                          ) +
             geom_bar(stat="identity",position = 'dodge',aes(x=degrees,y=co2,
                                                             fill=factor(tcre_pct,levels = rev(levels(tcre_pct))),
-                                                            text =paste(round(co2),"metric tons")
+                                                            text =paste(prettyNum(round(co2),big.mark=","),"metric tons,\n",prettyNum(round(total),big.mark=","),"total")
                                                             )
                      ) +
-            #theme_hc(style = "darkunica") +
-            #scale_fill_hc("darkunica") +
             dark_mode(theme_fivethirtyeight())+
-            labs(title=paste("IPCC 2018 Target:",input$cntry),y="CO2 Mt",x="Degrees",fill="Percentile\nTCRE") + 
-            #theme(axis.text.x=element_text(angle=20)
-            #      ,plot.title=element_text(margin = margin(b = 1))
-            #      ) #+
-            facet_wrap(vars(Country)) #+
-            #scale_x_discrete(limits = rev(levels(as.factor(carbon$Country))))
-            
+            labs(title="IPCC 2018 Target",y="CO2 Mt",x="Degrees",fill="Percentile\nTCRE") 
         
-        #scale_color_manual(values=c("#69b3a2", "purple", "black"))
+        graph1 <- graph1 +
+        
+        if(!all(input$region=="All")&input$cntnt!="All"|!all(input$cntry=="All")) {
+          facet_wrap(vars(Country))
+        }
+        else if(!input$cntnt %in% c("World","All")|!all(input$region=="All")) {
+          facet_wrap(vars(Region))
+        }
+        else {
+          facet_wrap(vars(Continent))
+        }
+        
         
         
        #if(length(input$cntry)>100|input$cntry=='All') {
