@@ -21,10 +21,10 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
 #wgts <- c(.5,0,.5,0)
 
 #testing country
-cntry <- "Austria"
+##cntry <- "Austria"
 #testing forecast
-start <- 2005
-end <- 2100
+##start <- 2005
+##end <- 2100
 
 #test year
 #year <- 2017
@@ -318,7 +318,7 @@ server <- function(input, output, session) {
       labs(title=#paste(
         "CO2 Emission Projections"
                        #)
-        ,y="CO2 Mt",x="Year",fill="Projection",color=paste(Continent,Region,Country,sep="/")) 
+        ,y="CO2 Mt",x="Year",fill="Projection") 
     
     graph2 <- graph2 +
       

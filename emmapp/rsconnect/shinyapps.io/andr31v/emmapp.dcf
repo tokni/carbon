@@ -5,6 +5,6 @@ account: andr31v
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2069926
-bundleId: 3000543
+bundleId: 3034645
 url: https://andr31v.shinyapps.io/emmapp/
-when: 1586625974.69103
+when: 1587306170.87499
