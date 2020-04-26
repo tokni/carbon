@@ -1,4 +1,4 @@
-#/home/andr31/R/github/carbon/
+#setwd('/home/andr31/R/github/carbon/emmapp/')
 
 library(shiny)
 library(shinycssloaders)
@@ -13,6 +13,15 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
                         tcre_pct=rep(c("66%","50%","33%"),3),
                         ipcc=c(570000,770000,1080000,1320000,1690000,2270000,2400000,2800000,3250000)
 ) 
+
+## Chart 1 Math ##
+#Inter-governmental panel on climate change set a target global carbon emmission budget (2018+ inc.)
+#distributed according to magnitude of change in temperature (degrees)
+#the probability of staying below that target change (TCRE percentile)
+#e.g. lowest budget (570k mega ton) need to be in high probability (66%) of staying below best case target (1.5 deg)
+#Model assigns individual Continent/Region/Countries shared budgets from this total 
+#based on relative population & GDP (up to 2017), emmissions (present & historical, up to 2014)
+
 #set up weights
 #w_pop <- .5
 #w_gdp <- 0
@@ -44,7 +53,9 @@ clean_n_gather <- function(path) {
 #standardize data
 summarize_dat <- function(dat,yr) {
     dat %>% 
-        filter(Year==yr,!is.na(value)) %>% 
+        mutate(value=if_else(is.na(value),0,value)) %>% 
+        filter(Year==yr#,!is.na(value) ## Notes: NA values being treated as 0!!! ##
+               ) %>% 
         mutate(w=value/sum(value)) %>% 
         select(Country,w)
 }
@@ -52,7 +63,8 @@ pop <- clean_n_gather("in/pop.csv")
 gdp <- clean_n_gather("in/gdp.csv")
 emm <- clean_n_gather("in/emm.csv")
 emm_w_h <- emm %>% 
-    filter(!is.na(value)) %>% 
+    #filter(!is.na(value)) %>%
+    mutate(value=if_else(is.na(value),0,value)) %>% 
     group_by(Country) %>% 
     summarise(value=sum(value)) %>% 
     mutate(w=value/sum(value)) %>% 
@@ -93,12 +105,12 @@ ui <- fluidPage(
                    )
     ),
     # Application title
-    titlePanel("Carbon Budget Sharing"),
+    titlePanel("IPCC: Carbon Budget Sharing Analysis"),
 
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
         sidebarPanel(
-            selectInput("year","Select Reference Year",choices=c(1960:2018),selected=2017),
+            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017),
             column(12,h5("*Select Geographic Location")),
             fluidRow(
                 column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
@@ -106,20 +118,20 @@ ui <- fluidPage(
                 column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
             ),
             column(12,h5("*Select Weights (Must add to 100%)")),
-            fluidRow(column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100)),
-                     column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100)),
-                     column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100)),
-                     column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100))
+            fluidRow(column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100,step=10)),
+                     column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100,step=10)),
+                     column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100,step=10)),
+                     column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100,step=10))
                      ),
             numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
             numericInput("start","Select Forecast Baseline Date",value=2005,min=2005,max=2005)
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(h3("Graph 1:"), textOutput("test"),
+        mainPanel(h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")#, textOutput("test"),
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
-           column(12,plotlyOutput("g1") %>% withSpinner(color="#1A4C64")),
-           h3("Graph 2:"),
+          ,column(12,plotlyOutput("g1") %>% withSpinner(color="#1A4C64")),
+           h3("Actual vs. Forecasted Consumption: Yearly Drilldown"),
            column(12,plotlyOutput("g2") %>% withSpinner(color="#1A4C64"))
         )
     )
@@ -127,9 +139,6 @@ ui <- fluidPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
-    
-    output$test <- renderText({
-    })
     
     #waterfall logic for geo selections
     observeEvent(input$cntnt,{
@@ -307,18 +316,37 @@ server <- function(input, output, session) {
     
     })
     
+    output$test <- renderText({
+      event_data("plotly_click") %>% 
+        .[[4]] -> budget
+      ref_year <- data2() %>% 
+        filter(Year>=2018) %>% 
+        mutate(Co2_sum=cumsum(Co2),
+               flag=if_else(Co2_sum>=budget,1,0)
+        ) %>% 
+        filter(flag==1) %>%
+        slice(1) %>%
+        ungroup() %>% 
+        select(Year) %>% 
+        .[[1]] 
+      #budget
+      ref_year
+    })
+    
     output$g2 <- renderPlotly({
     
     graph2 <- ggplot(data2()) +
       geom_bar(stat="identity",aes(x=Year,y=Co2,fill=Projection
-                                   #,text =paste(prettyNum(round(Co2),big.mark=","),"metric tons,\n")
+                                   ,text =paste(Year, Projection,":\n",prettyNum(round(Co2,2),big.mark=","),"mega tons")
       )
       ) +
       dark_mode(theme_fivethirtyeight())+
       labs(title=#paste(
         "CO2 Emission Projections"
                        #)
-        ,y="CO2 Mt",x="Year",fill="Projection") 
+        ,y="CO2 Mt",x="Year",fill="Projection") +
+      scale_x_continuous(name="Year",breaks = seq(1960,2100,10)) +
+      theme(axis.text.x = element_text(angle=45))
     
     graph2 <- graph2 +
       
@@ -332,8 +360,34 @@ server <- function(input, output, session) {
       facet_wrap(vars(Continent))
     }
     
+    #add hover for budget expired
+    if(length(event_data("plotly_click") %>% .[[4]]) >0 &
+       length(unique(data2()$Continent))==1&
+       length(unique(data2()$Region))==1&
+       length(unique(data2()$Country))==1
+    ) {
+      event_data("plotly_click") %>% 
+        .[[4]] -> budget
+      ref_year <- data2() %>% 
+        filter(Year>=2018) %>% 
+        mutate(Co2_sum=cumsum(Co2),
+               flag=if_else(Co2_sum>=budget,1,0)
+        ) %>% 
+        filter(flag==1) %>%
+        slice(1) %>%
+        ungroup() %>% 
+        select(Year) %>% 
+        .[[1]] 
+      if(length(ref_year)==0) {
+        ref_year <- 2100
+      }
+      graph2 <- graph2 + 
+        geom_vline(aes(xintercept = ref_year,linetype = "Budget Expiration Year")) + 
+        geom_text(aes(ref_year,0,label = ref_year, vjust = -1)) 
+    }
     
-    ggplotly(graph2)
+    
+    ggplotly(graph2, tooltip = "text")
     })
     
 
@@ -343,7 +397,7 @@ server <- function(input, output, session) {
                          ) +
             geom_bar(stat="identity",position = 'dodge',aes(x=degrees,y=co2,
                                                             fill=factor(tcre_pct,levels = rev(levels(tcre_pct))),
-                                                            text =paste(prettyNum(round(co2),big.mark=","),"metric tons,\n",prettyNum(round(total),big.mark=","),"total")
+                                                            text =paste(prettyNum(round(co2),big.mark=","),"mega tons,\n",prettyNum(round(total),big.mark=","),"total")
                                                             )
                      ) +
             dark_mode(theme_fivethirtyeight())+
