@@ -2,6 +2,7 @@
 
 library(shiny)
 library(shinycssloaders)
+library("shinyBS")
 library(tidyverse)
 library(plotly)
 library(ggthemes)
@@ -87,37 +88,27 @@ mutate(factor=(100-reduc)/100) #forecasting factor to be applied to 2005 emissio
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
+  includeHTML("www/basic.html"),
+  includeCSS("www/bootstrap.min.css"),
 
-    tags$head(
-        tags$style(HTML("
-        body { 
-            background-color: grey;
-            color:black
-        }
-      .shiny-output-error-validation {
-        color: red;
-      }
-        
-        <!–– #g1{overflow-y:scroll;} ––>
-        
-        
-                        ")
-                   )
-    ),
     # Application title
-    titlePanel("IPCC: Carbon Budget Sharing Analysis"),
+    titlePanel("Carbon Budget Sharing Analysis"),
 
     # Sidebar with a slider input for number of bins 
-    sidebarLayout(
+    sidebarLayout(div(class="sidepan",
         sidebarPanel(
-            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017),
-            column(12,h5("*Select Geographic Location")),
+          #div(class="test",
+            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017)
+            #)
+            ,bsTooltip("year", "title", placement = "bottom", trigger = "hover",
+                       options = NULL)
+            ,h5("Select Geographic Location"),
             fluidRow(
                 column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
                 column(4,selectInput("region","Region",choices=c('All',unique(globe$Region)),selected='All',multiple=T)),
                 column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
             ),
-            column(12,h5("*Select Weights (Must add to 100%)")),
+            h5("Select Weights (Increment by 10 | Must add to 100%)"),
             fluidRow(column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100,step=10)),
                      column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100,step=10)),
                      column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100,step=10)),
@@ -125,6 +116,7 @@ ui <- fluidPage(
                      ),
             numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
             numericInput("start","Select Forecast Baseline Date",value=2005,min=2005,max=2005)
+        )
         ),
 
         # Show a plot of the generated distribution
@@ -132,7 +124,8 @@ ui <- fluidPage(
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
           ,column(12,plotlyOutput("g1") %>% withSpinner(color="#1A4C64")),
            h3("Actual vs. Forecasted Consumption: Yearly Drilldown"),
-           column(12,plotlyOutput("g2") %>% withSpinner(color="#1A4C64"))
+           column(12,plotlyOutput("g2") %>% withSpinner(color="#1A4C64")),
+          fluidRow(style = "padding-bottom:20px")
         )
     )
 )
@@ -397,11 +390,12 @@ server <- function(input, output, session) {
                          ) +
             geom_bar(stat="identity",position = 'dodge',aes(x=degrees,y=co2,
                                                             fill=factor(tcre_pct,levels = rev(levels(tcre_pct))),
-                                                            text =paste(prettyNum(round(co2),big.mark=","),"mega tons,\n",prettyNum(round(total),big.mark=","),"total")
+                                                            text =paste(degrees,"deg. |",tcre_pct,"prob.:\n",prettyNum(round(co2),big.mark=","),"Co2 mt (megatons)"#,prettyNum(round(total),big.mark=","),"total"
+                                                                        )
                                                             )
                      ) +
-            dark_mode(theme_fivethirtyeight())+
-            labs(title="IPCC 2018 Target",y="CO2 Mt",x="Degrees",fill="Percentile\nTCRE") 
+            labs(title="IPCC 2018 Target",y="CO2 mt",x="\nDegrees x Probability",fill="Probability of Success\nTCRE") +
+            dark_mode(theme_fivethirtyeight()) #+ theme(axis.title.x = element_text(margin=c(10,0,0,0)),axis.title.x = element_text(angle=0))  
         
         graph1 <- graph1 +
         
