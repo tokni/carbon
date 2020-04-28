@@ -3,17 +3,30 @@
 library(shiny)
 library(shinycssloaders)
 library("shinyBS")
+library("rhandsontable")
 library(tidyverse)
 library(plotly)
 library(ggthemes)
 library(ggdark)
 options(scipen = 999)
 
+ipcc <- " 520,338      	 720,338      	 1,030,338      	 1,270,338      	 1,640,338      	 2,220,338      	 2,350,338      	 2,750,338      	 3,200,338      
+" %>% 
+  str_replace_all(",","") %>% 
+  str_split("\t",simplify=T) %>% 
+  trimws() %>% 
+  as.numeric()
 #set up IPCC data
 ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
                         tcre_pct=rep(c("66%","50%","33%"),3),
-                        ipcc=c(570000,770000,1080000,1320000,1690000,2270000,2400000,2800000,3250000)
+                        ipcc=ipcc#c(570000,770000,1080000,1320000,1690000,2270000,2400000,2800000,3250000)
 ) 
+#set up default weights dataset
+default_weights <- data.frame(Factor=c("GDP Reference Year","Inverse GDP Per Capita Reference Year","Population Reference Year"
+                                       ,"Population 2050","Emissions <=2014 | Reference Year","Emissions Historical (<=2014)","Emissions Kyoto (1997-2014)"
+                                       ,"Fossil Fuels - 2018","Low Bio Resource - 2012","Land Area - 2018"),
+                              Weight=c(0,0,0.5,0,0.5,0,0,0,0,0)
+                              )
 
 ## Chart 1 Math ##
 #Inter-governmental panel on climate change set a target global carbon emmission budget (2018+ inc.)
@@ -21,7 +34,10 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
 #the probability of staying below that target change (TCRE percentile)
 #e.g. lowest budget (570k mega ton) need to be in high probability (66%) of staying below best case target (1.5 deg)
 #Model assigns individual Continent/Region/Countries shared budgets from this total 
-#based on relative population & GDP (up to 2017), emmissions (present & historical, up to 2014)
+#based on RELATIVE population & GDP (up to 2017), emmissions (present & historical, up to 2014) + (fators are weights)
+
+#pop diviser for historical emissions factor inverse
+pop_div <- 1000000
 
 #set up weights
 #w_pop <- .5
@@ -58,18 +74,60 @@ summarize_dat <- function(dat,yr) {
         filter(Year==yr#,!is.na(value) ## Notes: NA values being treated as 0!!! ##
                ) %>% 
         mutate(w=value/sum(value)) %>% 
-        select(Country,w)
+        select(Country,value,w)
 }
 pop <- clean_n_gather("in/pop.csv")
 gdp <- clean_n_gather("in/gdp.csv")
 emm <- clean_n_gather("in/emm.csv")
 emm_w_h <- emm %>% 
-    #filter(!is.na(value)) %>%
     mutate(value=if_else(is.na(value),0,value)) %>% 
     group_by(Country) %>% 
-    summarise(value=sum(value)) %>% 
-    mutate(w=value/sum(value)) %>% 
-    select(Country,w)
+    summarise(value=sum(value)) #%>% 
+    #mutate(w=value/sum(value)) %>% 
+    #select(Country,w)
+#kyoto emmissions 1997 forward
+emm_w_k <- emm %>% 
+  mutate(value=if_else(is.na(value)|Year<1997,0,value)) %>% 
+  group_by(Country) %>% 
+  summarise(value=sum(value)) #%>% 
+  #mutate(w=value/sum(value)) %>% 
+  #select(Country,w)
+
+pop50 <- read_csv("in/pop50.csv") %>% 
+  select(1,5,6) %>% 
+  rename(Country=1,y2020=2,y2050=3) %>% 
+  mutate(value=if_else(is.na(y2050),0,y2050)) %>% 
+  group_by(Country) %>% 
+  summarise(value=sum(value)) %>% 
+  mutate(w=value/sum(value)) %>% 
+  select(Country,w)
+
+foss <- read_csv("in/foss.csv") %>% 
+  mutate_at(vars(-1),as.numeric) %>% 
+  mutate_all(~ifelse(is.na(.),0,.)) %>% 
+  rename(Country=1) %>% 
+  mutate(value=if_else(is.na(`fossil fuels(MJ)`),0,`fossil fuels(MJ)`)) %>% 
+  group_by(Country) %>% 
+  summarise(value=sum(value)) %>% 
+  mutate(w=value/sum(value)) %>% 
+  select(Country,w)
+
+land <- read_csv("in/land.csv") %>% 
+  rename(Country=1,land=2) %>% 
+  mutate(value=if_else(is.na(land),0,land)) %>% 
+  group_by(Country) %>% 
+  summarise(value=sum(value)) %>% 
+  mutate(w=value/sum(value)) %>% 
+  select(Country,w)
+#small calculation - convert to getting data from URL
+foot <- read_csv("in/foot.csv") %>% 
+  rename(Country=1) %>% 
+  mutate(value=1/per_capita*capita) %>% 
+  mutate(value=if_else(is.na(value),0,value)) %>% 
+  group_by(Country) %>% 
+  summarise(value=sum(value)) %>% 
+  mutate(w=value/sum(value)) %>% 
+  select(Country,w)
 
 ## Chart2 Math ##
 #project % reductions based on 2005 data in 5 year increments (2020-50) and 25 (2050-100) 
@@ -108,23 +166,30 @@ ui <- fluidPage(
                 column(4,selectInput("region","Region",choices=c('All',unique(globe$Region)),selected='All',multiple=T)),
                 column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
             ),
-            h5("Select Weights (Increment by 10 | Must add to 100%)"),
-            fluidRow(column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100,step=10)),
-                     column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100,step=10)),
-                     column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100,step=10)),
-                     column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100,step=10))
-                     ),
+            h5(HTML("Select Factor Weights | <i>Decimals, must add up to 100%</i>")),
+            #fluidRow(
+            #         column(3,numericInput("w_pop","% Pop.",value=50,min=0,max=100,step=10)),
+            #         column(3,numericInput("w_gdp","% GDP",value=0,min=0,max=100,step=10)),
+            #         column(3,numericInput("w_emm","% CO2.",value=50,min=0,max=100,step=10)),
+            #         column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100,step=10))
+            #         ),
+            #br(),
+            fluidRow(
+                column(12,rHandsontableOutput("weights"))
+               ,textOutput("test")
+              ),
+            br(),
             numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
             numericInput("start","Select Forecast Baseline Date",value=2005,min=2005,max=2005)
         )
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")#, textOutput("test"),
+        mainPanel(h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
-          ,column(12,plotlyOutput("g1") %>% withSpinner(color="#1A4C64")),
+          ,column(12,plotlyOutput("g1") %>% withSpinner(color="#4CAF50")),
            h3("Actual vs. Forecasted Consumption: Yearly Drilldown"),
-           column(12,plotlyOutput("g2") %>% withSpinner(color="#1A4C64")),
+           column(12,plotlyOutput("g2") %>% withSpinner(color="#4CAF50")),
           fluidRow(style = "padding-bottom:20px")
         )
     )
@@ -132,6 +197,32 @@ ui <- fluidPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
+  
+    #create dynamic table for weights
+    table_weights <- reactive({
+      if (is.null(input$weights)) {
+      d <- default_weights
+      }
+      else {
+      d <- hot_to_r(input$weights)
+      }
+      d 
+    })
+    output$weights <- renderRHandsontable({
+      rhandsontable(table_weights(),rowHeaders = NULL, width =540, stretchH = "all") %>% 
+        hot_cols(columnSorting = F) %>% 
+        hot_col("Factor", readOnly = TRUE) %>% 
+        hot_col("Weight", format = "0%") %>% 
+        hot_validate_numeric(cols = "Weight",min = 0, max = 1) #%>%
+        #hot_cols("Weight",validator = "
+        #     function (value, callback) {
+        #      setTimeout(function(){
+        #        callback(value != 0);
+        #      }, 1000)
+        #     }",
+        #         allowInvalid = FALSE)
+      
+    })
     
     #waterfall logic for geo selections
     observeEvent(input$cntnt,{
@@ -160,11 +251,12 @@ server <- function(input, output, session) {
     })
     
     data <- reactive({
-        wgts <- c(input$w_pop,
-                  input$w_gdp,
-                  input$w_emm,
-                  input$w_emm_h)/100
-        validate(
+        wgts <- table_weights()$Weight
+        #c(input$w_pop,
+        #          input$w_gdp,
+        #          input$w_emm,
+        #          input$w_emm_h)/100
+        shiny::validate(
             need(sum(wgts)== 1, "Please make sure all weights add up to 100%"),
             need(length(input$cntnt)>0, "Please select at least one continent to analyze"),
             need(length(input$region)>0, "Please select at least one region to analyze"),
@@ -177,11 +269,51 @@ server <- function(input, output, session) {
         #set up factor data
         
         carbon <- pop_w %>%
-            rename(pop=w) %>% 
+            rename(pop=w,pop_v=value) %>% 
             inner_join(gdp_w %>% rename(gdp=w),by="Country") %>% 
-            inner_join(emm_w %>% rename(emm=w),by="Country") %>%
-            inner_join(emm_w_h %>% rename(emm_h=w),by="Country") %>% 
-            mutate(w_factor=pop*wgts[1]+gdp*wgts[2]+emm*wgts[3]+emm_h*wgts[4]) %>% 
+            #formula for inverse gdp factor - note value field is overriden each step so mutates performed between joins
+              mutate(value=(1/(value/pop_v))*pop_v) %>% 
+              mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
+              mutate(gdp_i=value/sum(value)) %>%
+              select(-value) %>% 
+            inner_join(emm_w_h, by="Country") %>% 
+            #formula for inverse hist em factor 
+              mutate(value=(1/( 
+                value/
+                  (pop_v/pop_div)
+              ))*pop_v
+              ) %>% 
+              mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
+              mutate(emm_h=value/sum(value)) %>%
+              select(-value) %>% 
+            inner_join(emm_w_k, by="Country") %>% 
+            #formula for inverse kyoto em factor 
+              mutate(value=(1/( 
+                value/
+                  (pop_v/pop_div)
+              ))*pop_v
+              ) %>% 
+              mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
+              mutate(emm_k=value/sum(value)) %>%
+              select(-value) %>% 
+            inner_join(emm_w %>% select(-value) %>% rename(emm=w),by="Country") %>%
+            inner_join(pop50 %>% rename(pop50=w),by="Country") %>% 
+            inner_join(foss %>% rename(foss=w),by="Country") %>% 
+            inner_join(land %>% rename(land=w),by="Country") %>% 
+            inner_join(foot %>% rename(lbio=w),by="Country") %>% 
+            #start derivation - order of weight input matters!!!
+            mutate(w_factor=#pop*wgts[1]+gdp*wgts[2]+emm*wgts[3]+emm_h*wgts[4]) %>%
+                    gdp*wgts[1] +
+                    gdp_i*wgts[2] +
+                    pop*wgts[3] +
+                    pop50*wgts[4] +
+                    emm*wgts[5] +
+                    emm_h*wgts[6] +
+                    emm_k*wgts[7] +
+                    foss*wgts[8] +
+                    lbio*wgts[9] +
+                    land*wgts[10]
+            ) %>% 
             select(Country,w_factor) %>% 
             crossing(ipcc_2018) %>%  #full join ipcc data
             mutate(co2=ipcc*w_factor) %>% 
@@ -310,20 +442,21 @@ server <- function(input, output, session) {
     })
     
     output$test <- renderText({
-      event_data("plotly_click") %>% 
-        .[[4]] -> budget
-      ref_year <- data2() %>% 
-        filter(Year>=2018) %>% 
-        mutate(Co2_sum=cumsum(Co2),
-               flag=if_else(Co2_sum>=budget,1,0)
-        ) %>% 
-        filter(flag==1) %>%
-        slice(1) %>%
-        ungroup() %>% 
-        select(Year) %>% 
-        .[[1]] 
-      #budget
-      ref_year
+      #event_data("plotly_click") %>% 
+      #  .[[4]] -> budget
+      #ref_year <- data2() %>% 
+      #  filter(Year>=2018) %>% 
+      #  mutate(Co2_sum=cumsum(Co2),
+      #         flag=if_else(Co2_sum>=budget,1,0)
+      #  ) %>% 
+      #  filter(flag==1) %>%
+      #  slice(1) %>%
+      #  ungroup() %>% 
+      #  select(Year) %>% 
+      #  .[[1]] 
+      ##budget
+      #ref_year
+      table_weights()$Weight
     })
     
     output$g2 <- renderPlotly({

@@ -67,6 +67,11 @@ border: 0px;
 color: white;
 }
 
+#weights {
+        color:black;
+        
+}
+
 h5 {
         margin-left: 0px;
         font-weight: bold;
@@ -92,7 +97,7 @@ body {
   color: red;
 }
   
-  <!–– #g1{overflow-y:scroll;} ––>
+  /* #g1{overflow-y:scroll;} */
         
         
                         
