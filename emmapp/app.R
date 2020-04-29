@@ -21,9 +21,9 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
                         ipcc=ipcc#c(570000,770000,1080000,1320000,1690000,2270000,2400000,2800000,3250000)
 ) 
 #set up default weights dataset
-default_weights <- data.frame(Factor=c("GDP Reference Year","Inverse GDP Per Capita Reference Year","Population Reference Year"
-                                       ,"Population 2050","Emissions <=2014 | Reference Year","Emissions Historical (<=2014)","Emissions Kyoto (1997-2014)"
-                                       ,"Fossil Fuels - 2018","Low Bio Resource - 2012","Land Area - 2018"),
+default_weights <- data.frame(Factor=c("GDP Ref.Year","Inv. GDP PC Ref.Year","Population Ref.Year"
+                                       ,"Population 2050","Emissions <=2014","Emissions Hist. <=2014","Emissions Kyoto"
+                                       ,"Fossil Fuels","Low Bio","Land Area"),
                               Weight=c(0,0,0.5,0,0.5,0,0,0,0,0)
                               )
 
@@ -193,10 +193,12 @@ ui <- fluidPage(
             #         column(3,numericInput("w_emm_h","% CO2 (hist).",value=0,min=0,max=100,step=10))
             #         ),
             #br(),
-            fluidRow(
-                column(12,rHandsontableOutput("weights"))
+            div(class="weights",
+                #column(12,
+                       rHandsontableOutput("weights")
+                 #      )
                #,textOutput("test")
-              ),
+            ),
             br(),
             numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
             numericInput("start","Select Forecast Baseline Date",value=2005,min=2005,max=2005)
@@ -228,7 +230,9 @@ server <- function(input, output, session) {
       d 
     })
     output$weights <- renderRHandsontable({
-      rhandsontable(table_weights(),rowHeaders = NULL, width =540, stretchH = "all") %>% 
+      rhandsontable(table_weights(),rowHeaders = NULL#, width =500
+                    , stretchH = "all"
+                    ) %>% 
         hot_cols(columnSorting = F) %>% 
         hot_col("Factor", readOnly = TRUE) %>% 
         hot_col("Weight", format = "0%") %>% 

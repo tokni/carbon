@@ -67,9 +67,12 @@ border: 0px;
 color: white;
 }
 
-#weights {
+.weights {
         color:black;
-        
+        display: block;
+        width: 100%;
+        overflow: auto; 
+
 }
 
 
