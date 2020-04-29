@@ -2,7 +2,6 @@
 
 library(shiny)
 library(shinycssloaders)
-library("shinyBS")
 library("rhandsontable")
 library(tidyverse)
 library(plotly)
@@ -95,12 +94,7 @@ emm_w_k <- emm %>%
 
 pop50 <- read_csv("in/pop50.csv") %>% 
   select(1,5,6) %>% 
-  rename(Country=1,y2020=2,y2050=3) %>% 
-  mutate(value=if_else(is.na(y2050),0,y2050)) %>% 
-  group_by(Country) %>% 
-  summarise(value=sum(value)) %>% 
-  mutate(w=value/sum(value)) %>% 
-  select(Country,w)
+  rename(Country=1,y2020=2,y2050=3) 
 
 test <- globe %>% 
   anti_join(pop50,by="Country") #Macedonia, FYR
@@ -112,16 +106,14 @@ foss <- read_csv("in/foss.csv") %>%
   mutate_all(~ifelse(is.na(.),0,.)) %>% 
   rename(Country=1) %>% 
   mutate(value=if_else(is.na(`fossil fuels(MJ)`),0,`fossil fuels(MJ)`)) %>% 
-  group_by(Country) %>% 
-  summarise(value=sum(value)) %>% 
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
+
+#all_equal(test,foot)
 
 land <- read_csv("in/land.csv") %>% 
   rename(Country=1,land=2) %>% 
   mutate(value=if_else(is.na(land),0,land)) %>% 
-  group_by(Country) %>% 
-  summarise(value=sum(value)) %>% 
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
 
@@ -130,8 +122,6 @@ foot <- read_csv("in/foot.csv") %>%
   rename(Country=1) %>% 
   mutate(value=1/per_capita*capita) %>% 
   mutate(value=if_else(is.na(value),0,value)) %>% 
-  group_by(Country) %>% 
-  summarise(value=sum(value)) %>% 
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
 
@@ -326,7 +316,11 @@ server <- function(input, output, session) {
              mutate(emm_k=value/sum(value)) %>%
              select(-value) %>% 
            inner_join(emm_w %>% select(-value) %>% rename(emm=w),by="Country") %>%
-           inner_join(pop50 %>% rename(pop50=w),by="Country") %>% 
+           inner_join(pop50 %>% select(Country,y2050),by="Country") %>% 
+             mutate(value=if_else(is.na(y2050),0,y2050)) %>% 
+             mutate(value=if_else(value==0,pop_v,value)) %>% #if 2050 pop is missing use current
+             mutate(pop50=value/sum(value)) %>% 
+             select(-value) %>% 
            inner_join(foss %>% rename(foss=w),by="Country") %>% 
            inner_join(land %>% rename(land=w),by="Country") %>% ## Need to cleanup footprint data !!!
            inner_join(foot %>% rename(lbio=w),by="Country") %>% 
