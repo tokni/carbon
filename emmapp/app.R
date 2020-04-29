@@ -102,6 +102,11 @@ pop50 <- read_csv("in/pop50.csv") %>%
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
 
+test <- globe %>% 
+  anti_join(pop50,by="Country") #Macedonia, FYR
+pop50 <- pop50 %>% 
+  mutate(Country=if_else(Country=="North Macedonia","Macedonia, FYR",Country))
+
 foss <- read_csv("in/foss.csv") %>% 
   mutate_at(vars(-1),as.numeric) %>% 
   mutate_all(~ifelse(is.na(.),0,.)) %>% 
@@ -119,6 +124,7 @@ land <- read_csv("in/land.csv") %>%
   summarise(value=sum(value)) %>% 
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
+
 #small calculation - convert to getting data from URL
 foot <- read_csv("in/foot.csv") %>% 
   rename(Country=1) %>% 
@@ -129,6 +135,29 @@ foot <- read_csv("in/foot.csv") %>%
   mutate(w=value/sum(value)) %>% 
   select(Country,w)
 
+test <- globe %>% 
+  anti_join(foot,by="Country") #Macedonia, FYR
+foot <- foot %>% 
+  mutate(Country=if_else(Country=="Bahamas","Bahamas, The",Country)) %>% 
+  mutate(Country=if_else(Country=="Congo","Congo, Rep.",Country)) %>% 
+  mutate(Country=if_else(Country=="Congo, Democratic Republic of","Congo, Dem. Rep.",Country)) %>%
+  mutate(Country=if_else(Country=="Côte d'Ivoire","Cote d'Ivoire",Country)) %>%
+  mutate(Country=if_else(Country=="Egypt","Egypt, Arab Rep.",Country)) %>%
+  mutate(Country=if_else(Country=="Swaziland","Eswatini",Country)) %>%
+  mutate(Country=if_else(Country=="Gambia","Gambia, The",Country)) %>%
+  mutate(Country=if_else(Country=="Iran, Islamic Republic of","Iran, Islamic Rep.",Country)) %>% 
+  mutate(Country=if_else(Country=="Korea, Democratic People's Republic of","Korea, Dem. People’s Rep.",Country)) %>%
+  mutate(Country=if_else(Country=="Korea, Republic of","Korea, Rep.",Country)) %>%
+  mutate(Country=if_else(Country=="Slovakia","Slovak Republic",Country)) %>%
+  mutate(Country=if_else(Country=="Saint Kitts and Nevis","St. Kitts and Nevis",Country)) %>%
+  mutate(Country=if_else(Country=="Saint Lucia","St. Lucia",Country)) %>%
+  mutate(Country=if_else(Country=="Saint Vincent and Grenadines","St. Vincent and the Grenadines",Country)) %>%
+  mutate(Country=if_else(Country=="Tanzania, United Republic of","Tanzania",Country)) %>%
+  mutate(Country=if_else(Country=="United States of America","United States",Country)) %>%
+  mutate(Country=if_else(Country=="Venezuela, Bolivarian Republic of","Venezuela, RB",Country)) %>%
+  mutate(Country=if_else(Country=="Viet Nam","Vietnam",Country)) %>%
+  mutate(Country=if_else(Country=="Yemen","Yemen, Rep.",Country))
+  
 ## Chart2 Math ##
 #project % reductions based on 2005 data in 5 year increments (2020-50) and 25 (2050-100) 
 co2_reduction <- data.frame(
@@ -155,11 +184,11 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(div(class="sidepan",
         sidebarPanel(
-          #div(class="test",
-            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017)
-            #)
-            ,bsTooltip("year", "title", placement = "bottom", trigger = "hover",
-                       options = NULL)
+          div(class="year",
+            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017),
+            span(class="tooltiptext","Select 'as-of' date for all data, excluding emissions (<=2014), land, footprint, and fossil fuels (2018)")
+            )
+#see details for styling hovers: https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_tooltip
             ,h5("Select Geographic Location"),
             fluidRow(
                 column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
@@ -176,7 +205,7 @@ ui <- fluidPage(
             #br(),
             fluidRow(
                 column(12,rHandsontableOutput("weights"))
-               ,textOutput("test")
+               #,textOutput("test")
               ),
             br(),
             numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
@@ -276,45 +305,45 @@ server <- function(input, output, session) {
               mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
               mutate(gdp_i=value/sum(value)) %>%
               select(-value) %>% 
-            inner_join(emm_w_h, by="Country") %>% 
-            #formula for inverse hist em factor 
-              mutate(value=(1/( 
-                value/
-                  (pop_v/pop_div)
-              ))*pop_v
-              ) %>% 
-              mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
-              mutate(emm_h=value/sum(value)) %>%
-              select(-value) %>% 
-            inner_join(emm_w_k, by="Country") %>% 
-            #formula for inverse kyoto em factor 
-              mutate(value=(1/( 
-                value/
-                  (pop_v/pop_div)
-              ))*pop_v
-              ) %>% 
-              mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
-              mutate(emm_k=value/sum(value)) %>%
-              select(-value) %>% 
-            inner_join(emm_w %>% select(-value) %>% rename(emm=w),by="Country") %>%
-            inner_join(pop50 %>% rename(pop50=w),by="Country") %>% 
-            inner_join(foss %>% rename(foss=w),by="Country") %>% 
-            inner_join(land %>% rename(land=w),by="Country") %>% 
-            inner_join(foot %>% rename(lbio=w),by="Country") %>% 
-            #start derivation - order of weight input matters!!!
-            mutate(w_factor=#pop*wgts[1]+gdp*wgts[2]+emm*wgts[3]+emm_h*wgts[4]) %>%
-                    gdp*wgts[1] +
-                    gdp_i*wgts[2] +
-                    pop*wgts[3] +
-                    pop50*wgts[4] +
-                    emm*wgts[5] +
-                    emm_h*wgts[6] +
-                    emm_k*wgts[7] +
-                    foss*wgts[8] +
-                    lbio*wgts[9] +
-                    land*wgts[10]
-            ) %>% 
-            select(Country,w_factor) %>% 
+           inner_join(emm_w_h, by="Country") %>% 
+           #formula for inverse hist em factor 
+             mutate(value=(1/( 
+               value/
+                 (pop_v/pop_div)
+             ))*pop_v
+             ) %>% 
+             mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
+             mutate(emm_h=value/sum(value)) %>%
+             select(-value) %>% 
+           inner_join(emm_w_k, by="Country") %>% 
+           #formula for inverse kyoto em factor 
+             mutate(value=(1/( 
+               value/
+                 (pop_v/pop_div)
+             ))*pop_v
+             ) %>% 
+             mutate(value=if_else(is.na(value)|is.infinite(value),0,value)) %>% 
+             mutate(emm_k=value/sum(value)) %>%
+             select(-value) %>% 
+           inner_join(emm_w %>% select(-value) %>% rename(emm=w),by="Country") %>%
+           inner_join(pop50 %>% rename(pop50=w),by="Country") %>% 
+           inner_join(foss %>% rename(foss=w),by="Country") %>% 
+           inner_join(land %>% rename(land=w),by="Country") %>% ## Need to cleanup footprint data !!!
+           inner_join(foot %>% rename(lbio=w),by="Country") %>% 
+          ##start derivation - order of weight input matters!!!
+           mutate(w_factor=#pop*wgts[1]+gdp*wgts[2]+emm*wgts[3]+emm_h*wgts[4]) %>%
+                  gdp*wgts[1] +
+                  gdp_i*wgts[2] +
+                  pop*wgts[3] +
+                  pop50*wgts[4] +
+                  emm*wgts[5] +
+                  emm_h*wgts[6] +
+                  emm_k*wgts[7] +
+                  foss*wgts[8] +
+                  lbio*wgts[9] +
+                  land*wgts[10]
+          ) %>% 
+          select(Country,w_factor) %>% 
             crossing(ipcc_2018) %>%  #full join ipcc data
             mutate(co2=ipcc*w_factor) %>% 
             inner_join(globe,by="Country") %>% #map to continents and regions
@@ -322,31 +351,31 @@ server <- function(input, output, session) {
             filter(all(input$region=='All')|Region %in% input$region) %>% 
             filter(all(input$cntry=='All')|Country %in% input$cntry)
         
-        carbon <- 
-        if(input$cntnt=="World"&all(input$region=="All")&all(input$cntry=="All")) {
-          carbon %>% 
-            mutate(Continent="World") %>% 
-            group_by(Continent,degrees,tcre_pct) %>% 
-            summarise(co2=sum(co2)) %>% 
-            mutate(total=sum(co2))
-        }
-        else if(!all(input$region=="All")&input$cntnt!="All"|!all(input$cntry=="All")) {
-          carbon %>% 
-            mutate(total=sum(co2))
-        }
-        else if(input$cntnt!="All"|!all(input$region=="All")) {
-          carbon %>%
-            group_by(Region,degrees,tcre_pct) %>% 
-            summarise(co2=sum(co2)) %>% 
-            mutate(total=sum(co2))
-        }
-        else {
-          carbon %>%
-            group_by(Continent,degrees,tcre_pct) %>% 
-            summarise(co2=sum(co2)) %>% 
-            mutate(total=sum(co2))
-        }
-            
+       carbon <- 
+       if(input$cntnt=="World"&all(input$region=="All")&all(input$cntry=="All")) {
+         carbon %>% 
+           mutate(Continent="World") %>% 
+           group_by(Continent,degrees,tcre_pct) %>% 
+           summarise(co2=sum(co2)) %>% 
+           mutate(total=sum(co2))
+       }
+       else if(!all(input$region=="All")&input$cntnt!="All"|!all(input$cntry=="All")) {
+         carbon %>% 
+           mutate(total=sum(co2))
+       }
+       else if(input$cntnt!="All"|!all(input$region=="All")) {
+         carbon %>%
+           group_by(Region,degrees,tcre_pct) %>% 
+           summarise(co2=sum(co2)) %>% 
+           mutate(total=sum(co2))
+       }
+       else {
+         carbon %>%
+           group_by(Continent,degrees,tcre_pct) %>% 
+           summarise(co2=sum(co2)) %>% 
+           mutate(total=sum(co2))
+       }
+
     })
     
     data2 <- reactive({
@@ -456,7 +485,8 @@ server <- function(input, output, session) {
       #  .[[1]] 
       ##budget
       #ref_year
-      table_weights()$Weight
+      #table_weights()$Weight
+      #nrow(data())
     })
     
     output$g2 <- renderPlotly({
