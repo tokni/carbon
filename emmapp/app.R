@@ -151,10 +151,10 @@ foot <- foot %>%
 ## Chart2 Math ##
 #project % reductions based on 2005 data in 5 year increments (2020-50) and 25 (2050-100) 
 co2_reduction <- data.frame(
-  reduc=c(10,15,20,22,30,35,20,20,20), #make these an input
+  Reduction=c(.10,.15,.20,.22,.30,.35,.20,.20,.20), #make these an input
   Year=c(seq(2020,2050,by=5),2075,2100)
-) %>% 
-mutate(factor=(100-reduc)/100) #forecasting factor to be applied to 2005 emission value
+) #%>% 
+#mutate(factor=(100-reduc)/100) #forecasting factor to be applied to 2005 emission value
 #forecast formula, emission data stops at 2014
 #Y_n1 + (delta_time=1year)*(rp-Y_n1)/(rp_y-y_n1)
 ##Y_n1=carbon in prior year
@@ -175,7 +175,7 @@ ui <- fluidPage(
     sidebarLayout(div(class="sidepan",
         sidebarPanel(
           div(class="year",
-            selectInput("year","Select Reference Year",choices=c(1960:2017),selected=2017),
+            selectInput("year","Select Reference Year",choices=c(2014:2017),selected=2017),
             span(class="tooltiptext","Select 'as-of' date for all data, excluding emissions (<=2014), land, footprint, and fossil fuels (2018)")
             )
 #see details for styling hovers: https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_tooltip
@@ -200,8 +200,18 @@ ui <- fluidPage(
                #,textOutput("test")
             ),
             br(),
-            numericInput("end","Select Forecast End Date",value=2100,min=2100,max=2100),
-            numericInput("start","Select Forecast Baseline Date",value=2005,min=2005,max=2005)
+            div(class="yearend",
+              numericInput("end","Select Forecast End Date",value=2100,min=2020,max=2100),
+              span(class="tooltiptext2","Forecast cutoff year for second chart, allowable values 2020-2100")
+            ),
+            div(class="yearstart",
+              numericInput("start","Select Forecast Baseline Date",value=2005,min=1960,max=2014),
+              span(class="tooltiptext3","Forecast baseline year for second chart, allowable values 1960-2014. Calculates projected reductions based on carbon emission production as of this year, e.g. 2005 emission volume used to calculate 50% reduction by 2100. *Note: You may edit/add/remove rows in forecast table below as applicable")
+            ),
+            br(),
+            div(class="reduc",
+                rHandsontableOutput("reduc")
+                )
         )
         ),
 
@@ -236,14 +246,49 @@ server <- function(input, output, session) {
         hot_cols(columnSorting = F) %>% 
         hot_col("Factor", readOnly = TRUE) %>% 
         hot_col("Weight", format = "0%") %>% 
-        hot_validate_numeric(cols = "Weight",min = 0, max = 1) #%>%
-        #hot_cols("Weight",validator = "
+        hot_validate_numeric(cols = "Weight",min = 0, max = 1) %>% 
+        hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE) %>% 
+        hot_cell(1, 1, "Gross Domestica Product in reference year, e.g. GDP 2017") %>% 
+        hot_cell(2, 1, "Inverse of GDP per capita, e.g. 1/GDP per capita 2017") %>%
+        hot_cell(3, 1, "Population in reference year, e.g. Population 2017") %>% 
+        hot_cell(4, 1, "Population (projected) in 2050 or that of reference year, when unavailable") %>% 
+        hot_cell(5, 1, "Co2 Emissions of min(reference year,2014); emissions data available as far out as 2014") %>% 
+        hot_cell(6, 1, "Historical Co2 Emissions 1960 - min(reference year,2014); the more you have used, the less you have left") %>% 
+        hot_cell(7, 1, "Emission after Kyoto agreement in 1997 - min(reference year,2014); the more you used, the less you have left.") %>% 
+        hot_cell(8, 1, "The larger fossil fuel reserves, the bigger carbon budget. 2018 data; all calculated in MJ(mega joule).") %>% 
+        hot_cell(9, 1, "1/(bio capacity/capita). 2018 data; countries with less bio ressources get a bigger carbon budget.") %>% 
+        hot_cell(10, 1, "Land area, calculated in square km. 2018 data; countries with more land get a bigger carbon budget.") 
+        
+         
+        # %>% hot_cols("Weight",validator = "
         #     function (value, callback) {
         #      setTimeout(function(){
         #        callback(value != 0);
         #      }, 1000)
         #     }",
         #         allowInvalid = FALSE)
+      
+    })
+    
+    #create dynamic table for reductions
+    table_reduc <- reactive({
+      if (is.null(input$reduc)) {
+        d <- co2_reduction
+      }
+      else {
+        d <- hot_to_r(input$reduc)
+      }
+      d 
+    })
+    output$reduc <- renderRHandsontable({
+      rhandsontable(table_reduc(),rowHeaders = NULL#, width =500
+                    , stretchH = "all"
+      ) %>% 
+        hot_cols(columnSorting = F) %>% 
+        hot_col("Reduction", format = "0%") %>% 
+        hot_col("Year", format ='0') %>% 
+        hot_validate_numeric(cols = "Reduction",min = 0, max = 10) %>% 
+        hot_context_menu(allowRowEdit = TRUE, allowColEdit = FALSE)
       
     })
     
@@ -444,7 +489,7 @@ server <- function(input, output, session) {
       select(Continent,Region,Country,Co2_05)
     
     fcast <- fcast %>% 
-      left_join(co2_reduction %>% mutate(year2=Year),by="Year") %>% #add reference points
+      left_join(table_reduc() %>% mutate(year2=Year,factor=1-Reduction),by="Year") %>% #add reference points
       left_join(baseline,by=c("Continent","Region","Country")) %>% 
       mutate(Co2=if_else(is.na(Co2),factor*Co2_05#fcast[fcast$Year==2005,]$Co2
                          ,Co2)
