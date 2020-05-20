@@ -3,7 +3,8 @@
 library(shiny)
 library(shinycssloaders)
 library("rhandsontable")
-library(tidyverse)
+#install.packages("stringi")
+library("tidyverse")
 library(plotly)
 library(ggthemes)
 library(ggdark)
@@ -24,8 +25,8 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
 default_weights <- data.frame(Factor=c("GDP Ref.Year","Inv. GDP PC Ref.Year","Population Ref.Year"
                                        ,"Population 2050","Emissions <=2014","Emissions Hist. <=2014","Emissions Kyoto"
                                        ,"Fossil Fuels","Low Bio","Land Area"),
-                              Weight=c(0,0,0.5,0,0.5,0,0,0,0,0)
-                              )
+                              Weight=c(100,0,0,0,0,0,0,0,0,0)
+                              ,stringsAsFactors = FALSE)
 
 ## Chart 1 Math ##
 #Inter-governmental panel on climate change set a target global carbon emmission budget (2018+ inc.)
@@ -151,8 +152,8 @@ foot <- foot %>%
 ## Chart2 Math ##
 #project % reductions based on 2005 data in 5 year increments (2020-50) and 25 (2050-100) 
 co2_reduction <- data.frame(
-  Reduction=c(.10,.15,.20,.22,.30,.35,.20,.20,.20), #make these an input
-  Year=c(seq(2020,2050,by=5),2075,2100)
+  Reduction=c(-5,20,40,60,110,100), #make these an input
+  Year=c(seq(2020,2050,by=10),2070,2100)
 ) #%>% 
 #mutate(factor=(100-reduc)/100) #forecasting factor to be applied to 2005 emission value
 #forecast formula, emission data stops at 2014
@@ -174,16 +175,17 @@ ui <- fluidPage(
     # Sidebar with a slider input for number of bins 
     sidebarLayout(div(class="sidepan",
         sidebarPanel(
-          div(class="year",
-            selectInput("year","Select Reference Year",choices=c(2014:2017),selected=2017),
-            span(class="tooltiptext","Select 'as-of' date for all data, excluding emissions (<=2014), land, footprint, and fossil fuels (2018)")
-            )
-#see details for styling hovers: https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_tooltip
-            ,h5("Select Geographic Location"),
+            h4(HTML("<i>Global Features</i>")),
+            h5("Select Geographic Location"),
             fluidRow(
                 column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
                 column(4,selectInput("region","Region",choices=c('All',unique(globe$Region)),selected='All',multiple=T)),
                 column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
+            ),
+            h4(HTML("<i>Chart 1 Features</i>")),
+            div(class="year",
+                selectInput("year","Select Reference Year",choices=c(2014:2017),selected=2017),
+                span(class="tooltiptext","Select 'as-of' date for all data, excluding emissions (<=2014), land, footprint, and fossil fuels (2018)")
             ),
             h5(HTML("Select Factor Weights | <i>Decimals, must add up to 100%</i>")),
             #fluidRow(
@@ -194,31 +196,38 @@ ui <- fluidPage(
             #         ),
             #br(),
             div(class="weights",
-                #column(12,
+                #box(
                        rHandsontableOutput("weights")
-                 #      )
-               #,textOutput("test")
+                #       )
             ),
             br(),
+            actionButton("apply1","Apply"),
+            br(),br(),
+            h4(HTML("<i>Chart 2 Features</i>")),
             div(class="yearend",
               numericInput("end","Select Forecast End Date",value=2100,min=2020,max=2100),
               span(class="tooltiptext2","Forecast cutoff year for second chart, allowable values 2020-2100")
             ),
             div(class="yearstart",
               numericInput("start","Select Forecast Baseline Date",value=2005,min=1960,max=2014),
-              span(class="tooltiptext3","Forecast baseline year for second chart, allowable values 1960-2014. Calculates projected reductions based on carbon emission production as of this year, e.g. 2005 emission volume used to calculate 50% reduction by 2100. *Note: You may edit/add/remove rows in forecast table below as applicable")
+              span(class="tooltiptext3",HTML("Forecast baseline year for second chart, allowable values 1960-2014.\n Select reduction % in carbon emission from baseline date to listed forecast dates for calculation resets, e.g. 50% reduction by 2100 with reference year 2005 sets forecasted emission levels in 2100 as 1/2 the 2005 level."))
             ),
             br(),
             div(class="reduc",
                 rHandsontableOutput("reduc")
-                )
+                ),
+            h6(HTML("<i>*Note: You may edit/add/remove rows above as applicable by right-clicking a cell.</i>")),
+            br(),
+            actionButton("apply2","Apply")
         )
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")
+        mainPanel(#textOutput("test"),
+          h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
           ,column(12,plotlyOutput("g1") %>% withSpinner(color="#4CAF50")),
+          fluidRow(),
            h3("Actual vs. Forecasted Consumption: Yearly Drilldown"),
            column(12,plotlyOutput("g2") %>% withSpinner(color="#4CAF50")),
           fluidRow(style = "padding-bottom:20px")
@@ -231,24 +240,36 @@ server <- function(input, output, session) {
   
     #create dynamic table for weights
     table_weights <- reactive({
-      if (is.null(input$weights)) {
       d <- default_weights
-      }
-      else {
+      if (!is.null(input$weights)) {
+        
+        #if(input$apply1>0) {
       d <- hot_to_r(input$weights)
+        #}
+        
       }
       d 
+      
     })
     output$weights <- renderRHandsontable({
-      rhandsontable(table_weights(),rowHeaders = NULL#, width =500
-                    , stretchH = "all"
+      
+      #MAT_comments = matrix(ncol = ncol(isolate(table_weights())), nrow = nrow(isolate(table_weights())))
+      #MAT_comments[1, 1] = "Test comment"
+      #MAT_comments[2, 2] = "Another test comment"
+      
+        rhandsontable(isolate(table_weights())
+                      #,comments = MAT_comments
+                      ,width = 543 #found by inspecting element!!!!
+                      ,rowHeaders = NULL
+                    #,colHeaders=c("Factor","Weight")
+                    #, stretchH = "all"
                     ) %>% 
         hot_cols(columnSorting = F) %>% 
-        hot_col("Factor", readOnly = TRUE) %>% 
-        hot_col("Weight", format = "0%") %>% 
-        hot_validate_numeric(cols = "Weight",min = 0, max = 1) %>% 
-        hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE) %>% 
-        hot_cell(1, 1, "Gross Domestica Product in reference year, e.g. GDP 2017") %>% 
+        hot_col("Factor", readOnly = TRUE, colWidths = 406) %>% 
+        hot_col("Weight", format = "0", colWidths = 137) %>% 
+        hot_validate_numeric(cols = "Weight",min = 0, max = 100) %>% 
+        hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE, allowComments = TRUE, ) %>% 
+        hot_cell(1, 1, "Gross Domestic Product in reference year, e.g. GDP 2017") %>% 
         hot_cell(2, 1, "Inverse of GDP per capita, e.g. 1/GDP per capita 2017") %>%
         hot_cell(3, 1, "Population in reference year, e.g. Population 2017") %>% 
         hot_cell(4, 1, "Population (projected) in 2050 or that of reference year, when unavailable") %>% 
@@ -258,7 +279,7 @@ server <- function(input, output, session) {
         hot_cell(8, 1, "The larger fossil fuel reserves, the bigger carbon budget. 2018 data; all calculated in MJ(mega joule).") %>% 
         hot_cell(9, 1, "1/(bio capacity/capita). 2018 data; countries with less bio ressources get a bigger carbon budget.") %>% 
         hot_cell(10, 1, "Land area, calculated in square km. 2018 data; countries with more land get a bigger carbon budget.") 
-        
+      
          
         # %>% hot_cols("Weight",validator = "
         #     function (value, callback) {
@@ -272,54 +293,77 @@ server <- function(input, output, session) {
     
     #create dynamic table for reductions
     table_reduc <- reactive({
-      if (is.null(input$reduc)) {
         d <- co2_reduction
-      }
-      else {
+        #input$apply1
+        if(!is.null(input$reduc)) {
         d <- hot_to_r(input$reduc)
-      }
+        }
       d 
     })
+    
+    #values <- reactiveValues()
+    #
+    ### Handsontable
+    #observe({
+    #  if (!is.null(input$reduc)) {
+    #    values[["previous"]] <- isolate(values[["DF"]])
+    #    DF = hot_to_r(input$reduc)
+    #  } else {
+    #    if (is.null(values[["DF"]]))
+    #      DF <- co2_reduction
+    #    else
+    #      DF <- values[["DF"]]
+    #  }
+    #  values[["DF"]] <- DF
+    #})
+    
+    
     output$reduc <- renderRHandsontable({
-      rhandsontable(table_reduc(),rowHeaders = NULL#, width =500
+      
+      rhandsontable(isolate(table_reduc()),rowHeaders = NULL#, width =500
                     , stretchH = "all"
       ) %>% 
         hot_cols(columnSorting = F) %>% 
-        hot_col("Reduction", format = "0%") %>% 
+        hot_col("Reduction", format = "0") %>% 
         hot_col("Year", format ='0') %>% 
-        hot_validate_numeric(cols = "Reduction",min = 0, max = 10) %>% 
+        hot_validate_numeric(cols = "Reduction",min = -1000, max = 1000) %>% 
         hot_context_menu(allowRowEdit = TRUE, allowColEdit = FALSE)
+      
       
     })
     
     #waterfall logic for geo selections
-    observeEvent(input$cntnt,{
-      req(input$cntnt,!input$cntnt %in% c("World","All"))  
-        
-      choices <- globe %>% 
-          filter(Continent==input$cntnt) %>% 
-          distinct(Region) %>% 
-          .[[1]]
-      updateSelectInput(session,"region",choices=c('All',choices),selected='All')
-    
-      choices <- globe %>% 
-          filter(Continent==input$cntnt) %>% 
-          distinct(Country) %>% 
-          .[[1]]
-      updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
-    })
-    
-    observeEvent(input$region,{
-      req(input$region,input$region!="All")  
-      choices <- globe %>% 
-          filter(Region %in% input$region) %>% 
-          distinct(Country) %>% 
-          .[[1]]
-      updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
-    })
+   observeEvent(input$cntnt,{
+     req(input$cntnt,!input$cntnt %in% c("World","All"))  
+       
+     choices <- globe %>% 
+         filter(Continent==input$cntnt) %>% 
+         distinct(Region) %>% 
+         .[[1]]
+     updateSelectInput(session,"region",choices=c('All',choices),selected='All')
+   
+     choices <- globe %>% 
+         filter(Continent==input$cntnt) %>% 
+         distinct(Country) %>% 
+         .[[1]]
+     updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
+   })
+   
+   observeEvent(input$region,{
+     req(input$region,input$region!="All")  
+     choices <- globe %>% 
+         filter(Region %in% input$region) %>% 
+         distinct(Country) %>% 
+         .[[1]]
+     updateSelectInput(session,"cntry",choices=c('All',choices),selected='All')
+   })
     
     data <- reactive({
-        wgts <- table_weights()$Weight
+      
+      #req(input$weights)
+        wgts <- #isolate(
+          table_weights()$Weight/100
+          #)
         #c(input$w_pop,
         #          input$w_gdp,
         #          input$w_emm,
@@ -423,6 +467,11 @@ server <- function(input, output, session) {
     
     data2 <- reactive({
       
+      shiny::validate(
+        need(input$end<=2100&input$end>=2020, "Forecast must be greater than year 2020 and not surpass year 2100."),
+        need(input$start<=2014&input$start>=1960, "Baseline year for forecast must be between 1960 and 2014.")
+        )
+      
       fcast <- emm %>%
         drop_na() %>% 
         inner_join(globe,by="Country") %>% #map to continents and regions
@@ -489,7 +538,7 @@ server <- function(input, output, session) {
       select(Continent,Region,Country,Co2_05)
     
     fcast <- fcast %>% 
-      left_join(table_reduc() %>% mutate(year2=Year,factor=1-Reduction),by="Year") %>% #add reference points
+      left_join(table_reduc() %>% mutate(year2=Year,factor=1-(Reduction/100)),by="Year") %>% #add reference points
       left_join(baseline,by=c("Continent","Region","Country")) %>% 
       mutate(Co2=if_else(is.na(Co2),factor*Co2_05#fcast[fcast$Year==2005,]$Co2
                          ,Co2)
@@ -510,7 +559,7 @@ server <- function(input, output, session) {
       mutate(Projection=if_else(Year>max(emm$Year),"Forecasted","Actual"))
     
     fcast
-    
+      
     })
     
     output$test <- renderText({
@@ -530,11 +579,14 @@ server <- function(input, output, session) {
       #ref_year
       #table_weights()$Weight
       #nrow(data())
+      input$apply1
     })
     
     output$g2 <- renderPlotly({
+      
+      input$apply2
     
-    graph2 <- ggplot(data2()) +
+    graph2 <- ggplot(isolate(data2())) +
       geom_bar(stat="identity",aes(x=Year,y=Co2,fill=Projection
                                    ,text =paste(Year, Projection,":\n",prettyNum(round(Co2,2),big.mark=","),"mega tons")
       )
@@ -561,13 +613,13 @@ server <- function(input, output, session) {
     
     #add hover for budget expired
     if(length(event_data("plotly_click") %>% .[[4]]) >0 &
-       length(unique(data2()$Continent))==1&
-       length(unique(data2()$Region))==1&
-       length(unique(data2()$Country))==1
+       length(unique(isolate(data2())$Continent))==1&
+       length(unique(isolate(data2())$Region))==1&
+       length(unique(isolate(data2())$Country))==1
     ) {
       event_data("plotly_click") %>% 
         .[[4]] -> budget
-      ref_year <- data2() %>% 
+      ref_year <- isolate(data2()) %>% 
         filter(Year>=2018) %>% 
         mutate(Co2_sum=cumsum(Co2),
                flag=if_else(Co2_sum>=budget,1,0)
@@ -591,8 +643,10 @@ server <- function(input, output, session) {
     
 
     output$g1 <- renderPlotly({
+      
+      input$apply1
         
-        graph1 <- ggplot(data=data() #%>% filter(Country=='China')
+        graph1 <- ggplot(data=isolate(data()) #%>% filter(Country=='China')
                          ) +
             geom_bar(stat="identity",position = 'dodge',aes(x=degrees,y=co2,
                                                             fill=factor(tcre_pct,levels = rev(levels(tcre_pct))),
@@ -623,11 +677,12 @@ server <- function(input, output, session) {
        #    config(displayModeBar = F) 
        #}
        #else {
-            ggplotly(graph1, tooltip = "text") %>% 
+        
+            ggplotly(isolate(graph1), tooltip = "text") %>% 
                 config(displayModeBar = F) 
             
         #}
-        
+      
         })
 }
 

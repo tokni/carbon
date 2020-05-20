@@ -67,13 +67,20 @@ border: 0px;
 color: white;
 }
 
+
 .weights {
         color:black;
-        display: block;
+        /*display: block;*/
         width: 100%;
         overflow: auto; 
-
 }
+
+
+/* inspect element!!!
+.weights .ht_master handsontable .wtHolder .wtHider {
+  width:0px;
+}
+*/
 
 .reduc {
         color:black;
@@ -87,6 +94,8 @@ color: white;
 .year {
   position: relative;
 }
+
+/*see details for styling hovers: https://www.w3schools.com/howto/tryit.asp?filename=tryhow_css_tooltip*/
 
 .year .tooltiptext {
   visibility: hidden;
@@ -174,6 +183,14 @@ body {
   
 .shiny-output-error-validation {
   color: red;
+}
+
+#apply1 {
+  background-color: #4CAF50;
+}
+
+#apply2 {
+  background-color: #4CAF50;
 }
   
   /* #g1{overflow-y:scroll;} */
