@@ -8,6 +8,7 @@ library("tidyverse")
 library(plotly)
 library(ggthemes)
 library(ggdark)
+library(htmlwidgets)
 options(scipen = 999)
 
 ipcc <- " 520,338      	 720,338      	 1,030,338      	 1,270,338      	 1,640,338      	 2,220,338      	 2,350,338      	 2,750,338      	 3,200,338      
@@ -22,8 +23,13 @@ ipcc_2018 <- data.frame(degrees=c(rep("<1.5°",3),rep("<2°",3),rep("<3°",3)),
                         ipcc=ipcc#c(570000,770000,1080000,1320000,1690000,2270000,2400000,2800000,3250000)
 ) 
 #set up default weights dataset
-default_weights <- data.frame(Factor=c("GDP Ref.Year","Inv. GDP PC Ref.Year","Population Ref.Year"
-                                       ,"Population 2050","Emissions <=2014","Emissions Hist. <=2014","Emissions Kyoto"
+default_weights <- data.frame(Factor=c("GDP Ref.Year"
+                                       ,"Inv. GDP PC Ref.Year"
+                                       ,"Population Ref.Year"
+                                       ,"Population 2050"
+                                       ,"Emissions <=2014"
+                                       ,"Emissions Hist. <=2014"
+                                       ,"Emissions Kyoto"
                                        ,"Fossil Fuels","Low Bio","Land Area"),
                               Weight=c(100,0,0,0,0,0,0,0,0,0)
                               ,stringsAsFactors = FALSE)
@@ -174,7 +180,18 @@ ui <- fluidPage(
 
     # Sidebar with a slider input for number of bins 
     sidebarLayout(div(class="sidepan",
-        sidebarPanel(
+        sidebarPanel( #get window size dynamically as input$width for sizing considerations
+          tags$head(tags$script('
+                        var width = 0;
+                        $(document).on("shiny:connected", function(e) {
+                          width = window.innerWidth;
+                          Shiny.onInputChange("width", width);
+                        });
+                        $(window).resize(function(e) {
+                          width = window.innerWidth;
+                          Shiny.onInputChange("width", width);
+                        });
+                        ')),
             h4(HTML("<i>Global Features</i>")),
             h5("Select Geographic Location"),
             fluidRow(
@@ -196,7 +213,7 @@ ui <- fluidPage(
             #         ),
             #br(),
             div(class="weights",
-                #box(
+                #column(12,
                        rHandsontableOutput("weights")
                 #       )
             ),
@@ -219,6 +236,7 @@ ui <- fluidPage(
             h6(HTML("<i>*Note: You may edit/add/remove rows above as applicable by right-clicking a cell.</i>")),
             br(),
             actionButton("apply2","Apply")
+        ,width=3
         )
         ),
 
@@ -259,14 +277,16 @@ server <- function(input, output, session) {
       
         rhandsontable(isolate(table_weights())
                       #,comments = MAT_comments
-                      ,width = 543 #found by inspecting element!!!!
+                      ,width=input$width*.15#the lowest ratio of sidepanel to window#543 
                       ,rowHeaders = NULL
                     #,colHeaders=c("Factor","Weight")
                     #, stretchH = "all"
                     ) %>% 
         hot_cols(columnSorting = F) %>% 
-        hot_col("Factor", readOnly = TRUE, colWidths = 406) %>% 
-        hot_col("Weight", format = "0", colWidths = 137) %>% 
+        hot_col("Factor", readOnly = TRUE, colWidths = input$width*.15*(2/3)#406
+                ) %>% 
+        hot_col("Weight", format = "0", colWidths = input$width*.15*(1/3)#137
+                ) %>% 
         hot_validate_numeric(cols = "Weight",min = 0, max = 100) %>% 
         hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE, allowComments = TRUE, ) %>% 
         hot_cell(1, 1, "Gross Domestic Product in reference year, e.g. GDP 2017") %>% 
@@ -278,7 +298,8 @@ server <- function(input, output, session) {
         hot_cell(7, 1, "Emission after Kyoto agreement in 1997 - min(reference year,2014); the more you used, the less you have left.") %>% 
         hot_cell(8, 1, "The larger fossil fuel reserves, the bigger carbon budget. 2018 data; all calculated in MJ(mega joule).") %>% 
         hot_cell(9, 1, "1/(bio capacity/capita). 2018 data; countries with less bio ressources get a bigger carbon budget.") %>% 
-        hot_cell(10, 1, "Land area, calculated in square km. 2018 data; countries with more land get a bigger carbon budget.") 
+        hot_cell(10, 1, "Land area, calculated in square km. 2018 data; countries with more land get a bigger carbon budget.") %>% 
+        hot_cols(manualColumnResize=TRUE)
       
          
         # %>% hot_cols("Weight",validator = "
@@ -320,12 +341,12 @@ server <- function(input, output, session) {
     
     output$reduc <- renderRHandsontable({
       
-      rhandsontable(isolate(table_reduc()),rowHeaders = NULL#, width =500
-                    , stretchH = "all"
+      rhandsontable(isolate(table_reduc()),rowHeaders = NULL, width =input$width*.15
+                    #, stretchH = "all"
       ) %>% 
         hot_cols(columnSorting = F) %>% 
-        hot_col("Reduction", format = "0") %>% 
-        hot_col("Year", format ='0') %>% 
+        hot_col("Reduction", format = "0",colWidths=input$width*.15/2) %>% 
+        hot_col("Year", format ='0',colWidths=input$width*.15/2) %>% 
         hot_validate_numeric(cols = "Reduction",min = -1000, max = 1000) %>% 
         hot_context_menu(allowRowEdit = TRUE, allowColEdit = FALSE)
       
@@ -579,7 +600,8 @@ server <- function(input, output, session) {
       #ref_year
       #table_weights()$Weight
       #nrow(data())
-      input$apply1
+      #input$apply1
+      input$width
     })
     
     output$g2 <- renderPlotly({
@@ -654,7 +676,7 @@ server <- function(input, output, session) {
                                                                         )
                                                             )
                      ) +
-            labs(title="IPCC 2018 Target",y="CO2 mt",x="\nDegrees x Probability",fill="Probability of Success\nTCRE") +
+            labs(title="IPCC 2018 Target",y="CO2 mt",x="\nDegrees x Probability",fill="Probability") +
             dark_mode(theme_fivethirtyeight()) #+ theme(axis.title.x = element_text(margin=c(10,0,0,0)),axis.title.x = element_text(angle=0))  
         
         graph1 <- graph1 +
