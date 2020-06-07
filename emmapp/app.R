@@ -9,6 +9,7 @@ library(plotly)
 library(ggthemes)
 library(ggdark)
 library(htmlwidgets)
+library(shinyjs)
 options(scipen = 999)
 
 ipcc <- " 520,338      	 720,338      	 1,030,338      	 1,270,338      	 1,640,338      	 2,220,338      	 2,350,338      	 2,750,338      	 3,200,338      
@@ -31,7 +32,7 @@ default_weights <- data.frame(Factor=c("GDP Ref.Year"
                                        ,"Emissions Hist. <=2014"
                                        ,"Emissions Kyoto"
                                        ,"Fossil Fuels","Low Bio","Land Area"),
-                              Weight=c(100,0,0,0,0,0,0,0,0,0)
+                              Weight=c(0,0,100,0,0,0,0,0,0,0)
                               ,stringsAsFactors = FALSE)
 
 ## Chart 1 Math ##
@@ -158,7 +159,7 @@ foot <- foot %>%
 ## Chart2 Math ##
 #project % reductions based on 2005 data in 5 year increments (2020-50) and 25 (2050-100) 
 co2_reduction <- data.frame(
-  Reduction=c(-5,20,40,60,110,100), #make these an input
+  Reduction=c(-5,15,30,50,100,110), #make these an input
   Year=c(seq(2020,2050,by=10),2070,2100)
 ) #%>% 
 #mutate(factor=(100-reduc)/100) #forecasting factor to be applied to 2005 emission value
@@ -174,7 +175,10 @@ co2_reduction <- data.frame(
 ui <- fluidPage(
   includeHTML("www/basic.html"),
   includeCSS("www/bootstrap.min.css"),
-
+  useShinyjs(),
+  # code to reset plotlys event_data() to NULL -> executed upon action button click
+  # note that "A" needs to be replaced with plotly source string if used
+  #extendShinyjs(text = "shinyjs.resetClick = function() { Shiny.onInputChange('plotly_click'-A, 'null'); }"),
     # Application title
     titlePanel("Carbon Budget Sharing Analysis"),
 
@@ -198,8 +202,10 @@ ui <- fluidPage(
                 column(4,selectInput("cntnt","Continent",choices=c("World",'All',unique(globe$Continent)),selected='World',multiple=F)),
                 column(4,selectInput("region","Region",choices=c('All',unique(globe$Region)),selected='All',multiple=T)),
                 column(4,selectInput("cntry","Country",choices=c('All',unique(pop$Country)),selected='All',multiple=T))
+            ),div(id="vlad",
+            h4(HTML("<i>Chart 1 Features</i>"))
+            ,textOutput("text")
             ),
-            h4(HTML("<i>Chart 1 Features</i>")),
             div(class="year",
                 selectInput("year","Select Reference Year",choices=c(2014:2017),selected=2017),
                 span(class="tooltiptext","Select 'as-of' date for all data, excluding emissions (<=2014), land, footprint, and fossil fuels (2018)")
@@ -241,7 +247,7 @@ ui <- fluidPage(
         ),
 
         # Show a plot of the generated distribution
-        mainPanel(#textOutput("test"),
+        mainPanel(#verbatimTextOutput("click"),
           h3("IPCC Target(s) vs. Probability: Remaining Carbon Budget")
             #div(style='max-height:500px; overflow-y: scroll; position: relative',plotlyOutput("g1"))
           ,column(12,plotlyOutput("g1") %>% withSpinner(color="#4CAF50")),
@@ -255,6 +261,21 @@ ui <- fluidPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
+  
+  # this block fires each time we receive a message from JavaScript
+  #output$text <- renderText({
+  #  
+  #  req(input$count)
+  #  
+  #  paste("you clicked", input$count, "times on the apply button")
+  #  
+  #})
+  #
+  #output$click <- renderPrint({
+  #  d <- event_data("plotly_click")
+  #  if (is.null(d)) "No click" else d
+  #  #paste(d,"val:",input$apply1)
+  #})
   
     #create dynamic table for weights
     table_weights <- reactive({
@@ -289,15 +310,15 @@ server <- function(input, output, session) {
                 ) %>% 
         hot_validate_numeric(cols = "Weight",min = 0, max = 100) %>% 
         hot_context_menu(allowRowEdit = FALSE, allowColEdit = FALSE, allowComments = TRUE, ) %>% 
-        hot_cell(1, 1, "Gross Domestic Product in reference year, e.g. GDP 2017") %>% 
-        hot_cell(2, 1, "Inverse of GDP per capita, e.g. 1/GDP per capita 2017") %>%
-        hot_cell(3, 1, "Population in reference year, e.g. Population 2017") %>% 
-        hot_cell(4, 1, "Population (projected) in 2050 or that of reference year, when unavailable") %>% 
-        hot_cell(5, 1, "Co2 Emissions of min(reference year,2014); emissions data available as far out as 2014") %>% 
-        hot_cell(6, 1, "Historical Co2 Emissions 1960 - min(reference year,2014); the more you have used, the less you have left") %>% 
-        hot_cell(7, 1, "Emission after Kyoto agreement in 1997 - min(reference year,2014); the more you used, the less you have left.") %>% 
-        hot_cell(8, 1, "The larger fossil fuel reserves, the bigger carbon budget. 2018 data; all calculated in MJ(mega joule).") %>% 
-        hot_cell(9, 1, "1/(bio capacity/capita). 2018 data; countries with less bio ressources get a bigger carbon budget.") %>% 
+        hot_cell(1, 1, "Gross domestic product in the reference year, e.g. 2017. The higer GDP the higher carbon budget.") %>% 
+        hot_cell(2, 1, "Inverse of GDP per capita, e.g. 1/GDP per capíta 2017. The lower GDP per capita the higher carbon budget.") %>%
+        hot_cell(3, 1, "Population in reference year, e.g. 2017. The higher population the higher carbon budget.") %>% 
+        hot_cell(4, 1, "Population (projected) in 2050 or that of reference year, when unavailable. The higher the projected future population, the higher carbon budget.") %>% 
+        hot_cell(5, 1, "CO2 Emissions in latest data year 2014. The higher emission in that year, the higher carbon budget.") %>% 
+        hot_cell(6, 1, "Cumulated historical CO2 Emissions from 1960 to 2014. The higher cummulated historical emissions, the lower carbon budget.") %>% 
+        hot_cell(7, 1, "Cumulated emissions from the Kyoto agreement in 1997 to 2014. The higher accumulated emissions, the lower carbon budget.") %>% 
+        hot_cell(8, 1, " The larger fossil fuel reserves of the country, the bigger carbon budget.") %>% 
+        hot_cell(9, 1, "Countries with low bio-capacity, meaning low potential for producing biomass, get a higher share of carbon budget and vice versa.") %>% 
         hot_cell(10, 1, "Land area, calculated in square km. 2018 data; countries with more land get a bigger carbon budget.") %>% 
         hot_cols(manualColumnResize=TRUE)
       
@@ -635,7 +656,7 @@ server <- function(input, output, session) {
     
     #add hover for budget expired
     if(length(event_data("plotly_click") %>% .[[4]]) >0 &
-       length(unique(isolate(data2())$Continent))==1&
+       length(unique(isolate(data2())$Continent))==1& #making sure we are focusing line to one country at a time
        length(unique(isolate(data2())$Region))==1&
        length(unique(isolate(data2())$Country))==1
     ) {
@@ -651,12 +672,14 @@ server <- function(input, output, session) {
         ungroup() %>% 
         select(Year) %>% 
         .[[1]] 
+      lbl <- ref_year
       if(length(ref_year)==0) {
         ref_year <- 2100
+        lbl <- paste0(ref_year,"+")
       }
       graph2 <- graph2 + 
         geom_vline(aes(xintercept = ref_year,linetype = "Budget Expiration Year")) + 
-        geom_text(aes(ref_year,0,label = ref_year, vjust = -1)) 
+        geom_text(aes(ref_year,0,label = lbl, vjust = -1)) 
     }
     
     
@@ -667,6 +690,7 @@ server <- function(input, output, session) {
     output$g1 <- renderPlotly({
       
       input$apply1
+      #js$resetClick()
         
         graph1 <- ggplot(data=isolate(data()) #%>% filter(Country=='China')
                          ) +
@@ -701,7 +725,8 @@ server <- function(input, output, session) {
        #else {
         
             ggplotly(isolate(graph1), tooltip = "text") %>% 
-                config(displayModeBar = F) 
+                config(displayModeBar = F) %>% 
+              event_register("plotly_click")
             
         #}
       

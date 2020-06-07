@@ -14,3 +14,38 @@
   <span class="tooltiptext">Tooltip text</span>
 </div>
 -->
+
+<!--<p>Player 1: Chris</p>-->
+
+<script>
+
+//const para = document.querySelector('p');
+
+//para.addEventListener('click', updateName);
+
+//function updateName() {
+//  let name = prompt('Enter a new name');
+//  para.textContent = 'Player 1: ' + name;
+//}
+
+//var vlad = document.getElementById('g1')
+
+$(document).ready(function() {
+  
+  // initialize a counter
+  //var n = 0;
+  
+  // create a click handler which listens for a click on the element with id equal to RStudio
+  $("#apply1").on("click", function(){
+  
+    // increment the counter each time we click on the Rstudio logo
+    //n++;
+    
+    // send message to Shiny
+    //Shiny.onInputChange("count", n);
+    Shiny.onInputChange('plotly_click-A', null)
+    
+  });
+
+});
+</script>
